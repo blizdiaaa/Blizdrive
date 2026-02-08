@@ -306,7 +306,6 @@ const App: React.FC = () => {
     }));
   };
 
-  // Fix: Added handleRestoreVersion to support page history restoration
   const handleRestoreVersion = (version: PageVersion) => {
     if (!state.activeItemId) return;
     handleUpdateItem(state.activeItemId, {
@@ -315,10 +314,17 @@ const App: React.FC = () => {
     });
   };
 
-  // Fix: Added handleUpdateAnnotations to support PDF annotations persistence
   const handleUpdateAnnotations = (annotations: Annotation[]) => {
     if (!state.activeItemId) return;
     handleUpdateItem(state.activeItemId, { annotations });
+  };
+
+  const getSearchResults = () => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
+    return Object.values(state.items).filter(item => 
+      item.name.toLowerCase().includes(query)
+    );
   };
 
   if (!isInitialized) {
@@ -359,6 +365,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-black/70 z-30 backdrop-blur-md" onClick={() => setIsSidebarOpen(false)} />
       )}
 
+      {/* Sidebar */}
       <aside className={`fixed md:relative z-40 h-[calc(100vh-24px)] md:h-[calc(100vh-24px)] w-80 glass border-r border-white/10 flex flex-col m-3 rounded-2xl transition-all duration-300 shadow-2xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-[calc(100%+24px)] md:translate-x-0'}`}>
         <div className="p-6 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-violet-500/30 flex items-center justify-center border border-violet-400/50 glow-purple">
@@ -463,6 +470,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
+      {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setDeleteConfirmId(null)} />
@@ -496,6 +504,116 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Search Modal */}
+      {isSearchVisible && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setIsSearchVisible(false)} />
+          <div className="w-full max-w-2xl glass-card rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative flex flex-col max-h-[70vh]">
+            <div className="p-4 border-b border-white/10 flex items-center gap-4">
+              <Search className="text-violet-400" size={20} />
+              <input autoFocus placeholder="Locate knowledge node..." className="w-full bg-transparent border-none text-slate-100 text-lg outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+              <button onClick={() => setIsSearchVisible(false)} className="text-[10px] text-slate-500 bg-white/5 px-2 py-1 rounded border border-white/10">Esc</button>
+            </div>
+            <div className="flex-grow overflow-y-auto custom-scrollbar p-2">
+              {getSearchResults().map(item => (
+                <button key={item.id} onClick={() => { handleSelect(item.id); setIsSearchVisible(false); }} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/10 group text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/5 rounded-lg text-slate-400 group-hover:text-violet-400 transition-colors">
+                      {item.type === 'pdf' ? <FileText size={18}/> : item.type === 'folder' ? <Database size={18}/> : <FileText size={18}/>}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-slate-200">{item.name}</div>
+                      <div className="text-[10px] text-slate-500 uppercase tracking-tighter">{item.type}</div>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-600 opacity-0 group-hover:opacity-100" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preferences Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl" onClick={() => setIsSettingsOpen(false)} />
+          <div className="w-full max-w-xl glass-card rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <h2 className="font-['Orbitron'] font-bold text-slate-100 flex items-center gap-3 uppercase tracking-widest"><Settings className="text-violet-400"/> System Preferences</h2>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-500 hover:text-white transition-colors"><X size={20}/></button>
+            </div>
+            
+            <div className="p-8 space-y-10 custom-scrollbar max-h-[70vh] overflow-y-auto">
+              <section className="space-y-6">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] flex items-center gap-2"><User size={12}/> Profile Identity</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase tracking-widest">User Name</label>
+                    <input 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 text-slate-200 transition-all" 
+                      value={state.settings.userName}
+                      onChange={e => updateSettings({ userName: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase tracking-widest">Workspace Name</label>
+                    <input 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 text-slate-200 transition-all" 
+                      value={state.settings.workspaceName}
+                      onChange={e => updateSettings({ workspaceName: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] flex items-center gap-2"><Image size={12}/> Environment Calibration</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {THEME_OPTIONS.map(opt => (
+                    <button 
+                      key={opt.url}
+                      onClick={() => updateSettings({ background: opt.url })}
+                      className={`group relative aspect-video rounded-2xl overflow-hidden border-2 transition-all ${state.settings.background === opt.url ? 'border-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.3)] scale-[1.02]' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                    >
+                      <img src={opt.url} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
+                        <span className="text-[10px] font-bold text-white uppercase tracking-wider">{opt.name}</span>
+                      </div>
+                      {state.settings.background === opt.url && (
+                        <div className="absolute top-2 right-2 bg-violet-600 rounded-full p-1"><Check size={12} className="text-white"/></div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-6 pt-6 border-t border-white/10">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em]">Matrix Data Management</h3>
+                <div className="flex flex-wrap gap-4">
+                  <button onClick={() => {
+                    const dataStr = JSON.stringify(state, null, 2);
+                    const blob = new Blob([dataStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `${state.settings.workspaceName.toLowerCase()}-archive.json`;
+                    link.click();
+                  }} className="flex items-center gap-2 px-5 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all"><Download size={14}/> Backup Workspace</button>
+                  <button onClick={() => {
+                    if (confirm("Initiate Factory Reset? All global archive data will be purged.")) {
+                      localStorage.clear();
+                      window.location.reload();
+                    }
+                  }} className="flex items-center gap-2 px-5 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all"><LogOut size={14}/> Factory Reset</button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area */}
       <main className={`relative z-10 flex-grow flex flex-col m-2 md:m-3 mt-16 md:mt-3 ml-0 md:ml-0 rounded-2xl glass-card overflow-hidden shadow-2xl border border-white/10 transition-all ${isSidebarOpen && window.innerWidth <= 768 ? 'opacity-20 blur-sm' : ''}`}>
         {activeItem ? (
           <div className="flex-grow overflow-hidden h-full">
@@ -543,6 +661,7 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* Global Status Footer */}
         <div className="h-12 px-6 glass border-t border-white/5 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-6">
              <div className="flex items-center gap-2 text-[9px] text-slate-500 whitespace-nowrap uppercase font-bold tracking-widest">

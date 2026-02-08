@@ -62,7 +62,7 @@ export const INITIAL_DATA: any = {
   settings: {
     background: THEME_OPTIONS[0].url,
     accentColor: '#8b5cf6',
-    userName: 'Scholar',
+    userName: 'Blizdia',
     workspaceName: 'Ethereal'
   }
 };
