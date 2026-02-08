@@ -30,15 +30,18 @@ export const storageService = {
   },
 
   load: async (): Promise<WorkspaceState> => {
-    // Try remote first
     try {
       const response = await fetch(FIREBASE_URL);
       if (response.ok) {
         const remoteData = await response.json();
-        if (remoteData && remoteData.items && remoteData.tabs) {
-          console.log("Global Archive Uplink Successful");
-          return remoteData;
+        // If remote is empty, seed it with INITIAL_DATA
+        if (!remoteData || !remoteData.items || !remoteData.tabs) {
+          console.log("Global Archive empty, seeding INITIAL_DATA...");
+          await storageService.saveRemote(INITIAL_DATA);
+          return INITIAL_DATA;
         }
+        console.log("Global Archive Uplink Successful");
+        return remoteData;
       }
     } catch (e) {
       console.warn("Remote uplink unavailable, falling back to local cache.");

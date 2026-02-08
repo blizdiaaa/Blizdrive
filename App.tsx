@@ -26,9 +26,16 @@ const App: React.FC = () => {
   // Initialization: Load from Firebase
   useEffect(() => {
     const init = async () => {
-      const savedState = await storageService.load();
-      setState(savedState);
-      setIsInitialized(true);
+      try {
+        const savedState = await storageService.load();
+        if (savedState) {
+          setState(savedState);
+        }
+      } catch (e) {
+        console.error("Critical Initialization Failure:", e);
+      } finally {
+        setIsInitialized(true);
+      }
     };
     init();
   }, []);
@@ -37,17 +44,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isInitialized) return;
 
-    // Save locally immediately
     storageService.saveLocal(state);
 
-    // Debounce remote save
     if (syncTimeoutRef.current) window.clearTimeout(syncTimeoutRef.current);
     
     setIsSyncing(true);
     syncTimeoutRef.current = window.setTimeout(async () => {
       const success = await storageService.saveRemote(state);
       setIsSyncing(false);
-      if (!success) console.warn("Background sync failed. Data cached locally.");
+      if (!success) console.warn("Global synchronization suspended. Check connectivity.");
     }, 2000);
 
     return () => {
@@ -73,7 +78,7 @@ const App: React.FC = () => {
   }, []);
 
   // Derived state
-  const activeTab = state.tabs.find(t => t.id === state.activeTabId) || state.tabs[0] || { id: '', name: 'Default', rootItems: [] };
+  const activeTab = state.tabs.find(t => t.id === state.activeTabId) || state.tabs[0] || { id: '', name: 'DEFAULT', rootItems: [] };
   const activeItem = state.activeItemId ? state.items[state.activeItemId] : null;
 
   const handleSelect = (id: string) => {
@@ -150,44 +155,40 @@ const App: React.FC = () => {
 
   const confirmDelete = () => {
     if (!deleteConfirmId) return;
-    const itemIdToDelete = deleteConfirmId;
+    const itemIdToRemove = deleteConfirmId;
 
     setState(prev => {
       const nextItems = { ...prev.items };
-      if (!nextItems[itemIdToDelete]) return prev;
+      if (!nextItems[itemIdToRemove]) return prev;
 
-      // 1. Recursive collection of all descendant IDs
-      const idsToRemove = new Set<string>();
-      const collectDescendants = (id: string) => {
-        idsToRemove.add(id);
+      const idsToDelete = new Set<string>();
+      const gather = (id: string) => {
+        idsToDelete.add(id);
         const item = nextItems[id];
         if (item && item.children) {
-          item.children.forEach(childId => collectDescendants(childId));
+          item.children.forEach(childId => gather(childId));
         }
       };
-      collectDescendants(itemIdToDelete);
+      gather(itemIdToRemove);
 
-      // 2. Filter out items and clean up parent/child references in remaining items
       const updatedItems: Record<string, WorkspaceItem> = {};
       Object.keys(nextItems).forEach(id => {
-        if (!idsToRemove.has(id)) {
+        if (!idsToDelete.has(id)) {
           const item = { ...nextItems[id] };
           if (item.children) {
-            item.children = item.children.filter(cId => !idsToRemove.has(cId));
+            item.children = item.children.filter(cId => !idsToDelete.has(cId));
           }
           updatedItems[id] = item;
         }
       });
 
-      // 3. Clean up rootItems in all tabs
       const updatedTabs = prev.tabs.map(tab => ({
         ...tab,
-        rootItems: tab.rootItems.filter(id => !idsToRemove.has(id))
+        rootItems: tab.rootItems.filter(id => !idsToDelete.has(id))
       }));
 
-      // 4. Update active ID
       let newActiveItemId = prev.activeItemId;
-      if (prev.activeItemId && idsToRemove.has(prev.activeItemId)) {
+      if (prev.activeItemId && idsToDelete.has(prev.activeItemId)) {
         newActiveItemId = null;
       }
 
@@ -206,7 +207,7 @@ const App: React.FC = () => {
     const id = `tab-${Math.random().toString(36).substr(2, 9)}`;
     const newTab: Tab = {
       id,
-      name: 'NEW SEMESTER',
+      name: 'NEW CLUSTER',
       rootItems: []
     };
     setState(prev => ({
@@ -215,7 +216,7 @@ const App: React.FC = () => {
       activeTabId: id
     }));
     setEditingTabId(id);
-    setTabRenameValue('NEW SEMESTER');
+    setTabRenameValue('NEW CLUSTER');
   };
 
   const saveTabRename = () => {
@@ -305,14 +306,7 @@ const App: React.FC = () => {
     }));
   };
 
-  const getSearchResults = () => {
-    if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return Object.values(state.items).filter(item => 
-      item.name.toLowerCase().includes(query)
-    );
-  };
-
+  // Fix: Added handleRestoreVersion to support page history restoration
   const handleRestoreVersion = (version: PageVersion) => {
     if (!state.activeItemId) return;
     handleUpdateItem(state.activeItemId, {
@@ -321,6 +315,7 @@ const App: React.FC = () => {
     });
   };
 
+  // Fix: Added handleUpdateAnnotations to support PDF annotations persistence
   const handleUpdateAnnotations = (annotations: Annotation[]) => {
     if (!state.activeItemId) return;
     handleUpdateItem(state.activeItemId, { annotations });
@@ -328,9 +323,20 @@ const App: React.FC = () => {
 
   if (!isInitialized) {
     return (
-      <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
-        <div className="w-12 h-12 border-2 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
-        <p className="text-[10px] font-bold tracking-[0.3em] uppercase text-violet-400 animate-pulse">Establishing Uplink...</p>
+      <div className="h-screen w-screen bg-[#020617] flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-1000">
+        <div className="relative">
+          <div className="w-20 h-20 border-b-4 border-violet-500 rounded-full animate-spin shadow-[0_0_20px_rgba(139,92,246,0.3)]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Cloud className="text-violet-400 animate-pulse" size={24} />
+          </div>
+        </div>
+        <div className="text-center">
+          <h2 className="text-violet-400 font-['Orbitron'] tracking-[0.5em] uppercase text-xs font-bold mb-3">System Uplink</h2>
+          <div className="flex items-center gap-2 justify-center">
+            <span className="w-1 h-1 bg-violet-500 rounded-full animate-ping" />
+            <p className="text-slate-500 text-[9px] uppercase tracking-[0.2em]">Synchronizing Knowledge Matrix...</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -342,19 +348,17 @@ const App: React.FC = () => {
     >
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px]" />
 
-      {/* Header (Mobile) */}
       <div className="md:hidden absolute top-0 left-0 right-0 z-20 h-14 glass flex items-center justify-between px-4 border-b border-white/5">
         <div className="flex items-center">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-300"><Menu size={24} /></button>
-          <span className="ml-3 font-['Orbitron'] text-xs font-bold tracking-widest text-violet-400">{state.settings.workspaceName}</span>
+          <span className="ml-3 font-['Orbitron'] text-xs font-bold tracking-widest text-violet-400 uppercase">{state.settings.workspaceName}</span>
         </div>
       </div>
 
       {isSidebarOpen && window.innerWidth <= 768 && (
-        <div className="fixed inset-0 bg-black/60 z-30 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/70 z-30 backdrop-blur-md" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed md:relative z-40 h-[calc(100vh-24px)] md:h-[calc(100vh-24px)] w-80 glass border-r border-white/10 flex flex-col m-3 rounded-2xl transition-all duration-300 shadow-2xl ${isSidebarOpen ? 'translate-x-0' : '-translate-x-[calc(100%+24px)] md:translate-x-0'}`}>
         <div className="p-6 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-violet-500/30 flex items-center justify-center border border-violet-400/50 glow-purple">
@@ -362,16 +366,15 @@ const App: React.FC = () => {
           </div>
           <div className="flex-grow overflow-hidden">
             <h1 className="font-['Orbitron'] text-sm font-bold tracking-wider text-slate-100 uppercase truncate">{state.settings.workspaceName}</h1>
-            <p className="text-[10px] text-slate-400 tracking-widest font-medium uppercase truncate">By {state.settings.userName}</p>
+            <p className="text-[10px] text-slate-400 tracking-widest font-medium uppercase truncate">Terminal: {state.settings.userName}</p>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-slate-500 hover:text-white"><X size={20} /></button>
         </div>
 
-        {/* Semesters Tabs */}
         <div className="px-4 mb-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3 px-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Semesters</span>
-            <button onClick={handleAddTab} className="p-1.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-violet-400 transition-all active:scale-90" title="Add New Semester">
+            <button onClick={handleAddTab} className="p-1.5 hover:bg-white/10 rounded-full text-slate-400 hover:text-violet-400 transition-all active:scale-90" title="New Cluster Node">
               <Plus size={16} />
             </button>
           </div>
@@ -380,16 +383,16 @@ const App: React.FC = () => {
               <div 
                 key={tab.id}
                 onClick={() => setState(prev => ({ ...prev, activeTabId: tab.id }))}
-                className={`relative group px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest cursor-pointer border transition-all ${
+                className={`relative group px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-pointer border transition-all ${
                   state.activeTabId === tab.id 
-                    ? 'bg-violet-600/30 text-violet-300 border-violet-500/40 shadow-lg' 
+                    ? 'bg-violet-600/30 text-violet-200 border-violet-500/40 shadow-lg' 
                     : 'bg-white/5 text-slate-500 border-white/5 hover:border-white/10'
                 }`}
               >
                 {editingTabId === tab.id ? (
                   <input 
                     autoFocus
-                    className="bg-transparent border-none outline-none text-[10px] font-bold uppercase tracking-wider text-white w-24 text-center"
+                    className="bg-transparent border-none outline-none text-[9px] font-bold uppercase tracking-wider text-white w-16 text-center"
                     value={tabRenameValue}
                     onChange={e => setTabRenameValue(e.target.value)}
                     onBlur={saveTabRename}
@@ -412,16 +415,16 @@ const App: React.FC = () => {
         <div className="px-4 mb-6">
           <div className="relative group cursor-pointer" onClick={() => setIsSearchVisible(true)}>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-slate-300" size={14} />
-            <div className="w-full bg-white/5 border border-white/10 rounded-lg py-2 pl-9 pr-4 text-xs text-slate-400 select-none">Quick search... (⌘K)</div>
+            <div className="w-full bg-white/5 border border-white/10 rounded-lg py-2 pl-9 pr-4 text-xs text-slate-400 select-none">Locate Node... (⌘K)</div>
           </div>
         </div>
 
         <div className="flex-grow overflow-y-auto px-4 custom-scrollbar">
           <div className="flex items-center justify-between mb-4 px-2">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Library</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Knowledge Base</span>
             <div className="flex gap-1">
-              <button onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors" title="Upload PDF"><FilePlus size={14} /></button>
-              <button onClick={() => handleAddItem(null, 'folder')} className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors" title="New Folder"><PlusCircle size={14} /></button>
+              <button onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors" title="Import PDF"><FilePlus size={14} /></button>
+              <button onClick={() => handleAddItem(null, 'folder')} className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors" title="Create Folder"><PlusCircle size={14} /></button>
             </div>
           </div>
           
@@ -437,7 +440,7 @@ const App: React.FC = () => {
             }}
           >
             {activeTab.rootItems.length === 0 && (
-              <div className="text-[10px] text-slate-600 text-center py-12 px-4 border border-dashed border-white/5 rounded-2xl">Cluster is empty.</div>
+              <div className="text-[10px] text-slate-600 text-center py-16 px-4 border border-dashed border-white/5 rounded-2xl">Cluster Node Empty.</div>
             )}
             {activeTab.rootItems.map(itemId => (
               <TreeItem 
@@ -453,150 +456,41 @@ const App: React.FC = () => {
           <div className="flex items-center justify-between">
             <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-slate-200">
               <Settings size={16} />
-              <span className="text-xs font-medium">Settings</span>
+              <span className="text-xs font-medium">Preferences</span>
             </button>
-            <button className="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400"><HelpCircle size={16} /></button>
+            <div className="p-2 text-slate-600"><HelpCircle size={16} /></div>
           </div>
         </div>
       </aside>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md" onClick={() => setDeleteConfirmId(null)} />
-          <div className="w-full max-w-md glass-card rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-white/10">
-              <h2 className="font-['Orbitron'] font-bold text-slate-100 flex items-center gap-3">
-                <Trash2 className="text-red-400"/> Confirm Deletion
-              </h2>
-            </div>
-            
-            <div className="p-6">
-              <p className="text-slate-300 mb-2">
-                Permanently purge <span className="font-bold text-white">"{state.items[deleteConfirmId]?.name}"</span> and all sub-nodes?
-              </p>
-              <p className="text-sm text-slate-500">
-                This action is global and cannot be undone.
-              </p>
-            </div>
-
-            <div className="p-6 pt-0 flex gap-3">
-              <button 
-                onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={confirmDelete}
-                className="flex-1 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-xl text-sm transition-colors font-medium"
-              >
-                Delete Forever
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Modal */}
-      {isSettingsOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md" onClick={() => setIsSettingsOpen(false)} />
-          <div className="w-full max-w-xl glass-card rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-white/10 flex items-center justify-between">
-              <h2 className="font-['Orbitron'] font-bold text-slate-100 flex items-center gap-3"><Settings className="text-violet-400"/> System Preferences</h2>
-              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-500 hover:text-white transition-colors"><X size={20}/></button>
-            </div>
-            
-            <div className="p-6 space-y-8 custom-scrollbar max-h-[70vh] overflow-y-auto">
-              <section className="space-y-4">
-                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2"><User size={12}/> Profile Identity</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-500 ml-1">USER NAME</label>
-                    <input 
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-violet-500 text-slate-200" 
-                      value={state.settings.userName}
-                      onChange={e => updateSettings({ userName: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-500 ml-1">WORKSPACE NAME</label>
-                    <input 
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-violet-500 text-slate-200" 
-                      value={state.settings.workspaceName}
-                      onChange={e => updateSettings({ workspaceName: e.target.value })}
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-4">
-                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2"><Image size={12}/> Visual Environment</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {THEME_OPTIONS.map(opt => (
-                    <button 
-                      key={opt.url}
-                      onClick={() => updateSettings({ background: opt.url })}
-                      className={`relative aspect-video rounded-xl overflow-hidden border-2 transition-all ${state.settings.background === opt.url ? 'border-violet-500 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                    >
-                      <img src={opt.url} className="w-full h-full object-cover" />
-                      {state.settings.background === opt.url && (
-                        <div className="absolute inset-0 bg-violet-500/20 flex items-center justify-center"><Check size={20} className="text-white"/></div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <section className="space-y-4 pt-4 border-t border-white/10">
-                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Data Management</h3>
-                <div className="flex flex-wrap gap-3">
-                  <button onClick={() => {
-                    const dataStr = JSON.stringify(state, null, 2);
-                    const blob = new Blob([dataStr], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `${state.settings.workspaceName}-archive.json`;
-                    link.click();
-                  }} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs transition-colors"><Download size={14}/> Backup Workspace</button>
-                  <button onClick={() => {
-                    localStorage.clear();
-                    window.location.reload();
-                  }} className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-xl text-xs transition-colors"><LogOut size={14}/> Factory Reset</button>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Search Modal */}
-      {isSearchVisible && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-12 md:pt-20 px-4">
-          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setIsSearchVisible(false)} />
-          <div className="w-full max-w-2xl glass-card rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative flex flex-col max-h-[80vh]">
-            <div className="p-4 border-b border-white/10 flex items-center gap-4">
-              <Search className="text-violet-400" size={20} />
-              <input autoFocus placeholder="Locate knowledge node..." className="w-full bg-transparent border-none text-slate-100 text-lg outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-              <button onClick={() => setIsSearchVisible(false)} className="text-[10px] text-slate-500 bg-white/5 px-2 py-1 rounded border border-white/10">Esc</button>
-            </div>
-            <div className="flex-grow overflow-y-auto custom-scrollbar p-2">
-              {getSearchResults().map(item => (
-                <button key={item.id} onClick={() => { handleSelect(item.id); setIsSearchVisible(false); }} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/10 group text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white/5 rounded-lg text-slate-400 group-hover:text-violet-400 transition-colors">
-                      {item.type === 'pdf' ? <FileText size={18}/> : item.type === 'folder' ? <Database size={18}/> : <FileText size={18}/>}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-slate-200">{item.name}</div>
-                      <div className="text-[10px] text-slate-500 uppercase tracking-tighter">{item.type}</div>
-                    </div>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-600 opacity-0 group-hover:opacity-100" />
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setDeleteConfirmId(null)} />
+          <div className="w-full max-w-md glass-card rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <div className="p-10 text-center space-y-6">
+              <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.1)]">
+                <Trash2 className="text-red-500" size={36} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-['Orbitron'] font-bold text-white mb-3 uppercase tracking-wider">Purge Archive</h2>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  Permanently erase <span className="text-slate-100 font-bold">"{state.items[deleteConfirmId]?.name}"</span> and all nested sub-systems? This operation is global and irreversible.
+                </p>
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button 
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 px-4 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-slate-300 text-xs font-bold uppercase tracking-widest transition-all"
+                >
+                  Cancel
                 </button>
-              ))}
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-4 bg-red-600 hover:bg-red-500 rounded-2xl text-white font-bold text-xs uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(220,38,38,0.4)]"
+                >
+                  Confirm Purge
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -608,29 +502,31 @@ const App: React.FC = () => {
             {activeItem.type === 'page' && <BlockEditor item={activeItem} onChange={updates => handleUpdateItem(activeItem.id, updates)} onRestore={v => handleRestoreVersion(v)}/>}
             {activeItem.type === 'pdf' && <PDFViewer item={activeItem} onUpdateAnnotations={ann => handleUpdateAnnotations(ann)}/>}
             {activeItem.type === 'folder' && (
-              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-6 animate-float p-6 overflow-y-auto">
-                <div className="p-8 bg-white/5 rounded-full border border-white/10 relative">
-                  <Database size={64} className="text-violet-400/30" />
-                  <div className="absolute -bottom-2 -right-2 p-2 bg-violet-600 rounded-lg shadow-lg"><LayoutDashboard size={18} className="text-white" /></div>
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-8 animate-float p-10 overflow-y-auto">
+                <div className="p-10 bg-white/5 rounded-full border border-white/10 relative group">
+                  <Database size={80} className="text-violet-400/20 transition-transform group-hover:scale-110 duration-700" />
+                  <div className="absolute -bottom-2 -right-2 p-3 bg-violet-600 rounded-2xl shadow-[0_0_30px_rgba(139,92,246,0.5)] animate-pulse"><LayoutDashboard size={20} className="text-white" /></div>
                 </div>
-                <div className="text-center max-w-sm">
-                  <h3 className="text-2xl font-['Orbitron'] font-medium text-slate-200">{activeItem.name}</h3>
-                  <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <button onClick={() => handleAddItem(activeItem.id, 'page')} className="flex flex-col items-center gap-2 p-4 glass-card rounded-2xl border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5 group transition-all">
-                      <PlusCircle className="text-violet-400 group-hover:scale-110" />
-                      <span className="text-[10px] uppercase font-bold">New Page</span>
+                <div className="text-center max-w-md">
+                  <h3 className="text-3xl font-['Orbitron'] font-bold text-slate-100 uppercase tracking-widest mb-2">{activeItem.name}</h3>
+                  <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase mb-12">Archive Node Summary</p>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <button onClick={() => handleAddItem(activeItem.id, 'page')} className="flex flex-col items-center gap-3 p-6 glass-card rounded-3xl border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5 group transition-all">
+                      <PlusCircle className="text-violet-400 group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest">New Page</span>
                     </button>
-                    <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-2 p-4 glass-card rounded-2xl border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5 group transition-all">
-                      <Upload className="text-violet-400 group-hover:scale-110" />
-                      <span className="text-[10px] uppercase font-bold">Upload PDF</span>
+                    <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-3 p-6 glass-card rounded-3xl border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5 group transition-all">
+                      <Upload className="text-violet-400 group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest">Import PDF</span>
                     </button>
-                    <button onClick={() => handleAddItem(activeItem.id, 'folder')} className="flex flex-col items-center gap-2 p-4 glass-card rounded-2xl border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5 group transition-all">
-                      <Database className="text-violet-400 group-hover:scale-110" />
-                      <span className="text-[10px] uppercase font-bold">Subfolder</span>
+                    <button onClick={() => handleAddItem(activeItem.id, 'folder')} className="flex flex-col items-center gap-3 p-6 glass-card rounded-3xl border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5 group transition-all">
+                      <Database className="text-violet-400 group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest">Subfolder</span>
                     </button>
-                    <button onClick={() => handleDeleteItem(activeItem.id)} className="flex flex-col items-center gap-2 p-4 glass-card rounded-2xl border border-white/10 hover:border-red-500/50 hover:bg-red-500/5 group transition-all">
-                      <Trash2 className="text-red-400 group-hover:scale-110" />
-                      <span className="text-[10px] uppercase font-bold text-red-400">Delete</span>
+                    <button onClick={() => handleDeleteItem(activeItem.id)} className="flex flex-col items-center gap-3 p-6 glass-card rounded-3xl border border-white/10 hover:border-red-500/50 hover:bg-red-500/5 group transition-all">
+                      <Trash2 className="text-red-500 group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-red-500">Purge Node</span>
                     </button>
                   </div>
                 </div>
@@ -640,25 +536,25 @@ const App: React.FC = () => {
         ) : (
           <div className="flex flex-grow items-center justify-center text-slate-500 p-6">
             <div className="text-center animate-pulse">
-              <Command size={80} className="mx-auto opacity-10" />
-              <h2 className="text-2xl font-['Orbitron'] text-slate-400 mb-2 tracking-widest uppercase">Awaiting Link</h2>
-              <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Access an archive node from the library</p>
+              <Command size={100} className="mx-auto opacity-5 mb-6" />
+              <h2 className="text-2xl font-['Orbitron'] text-slate-500 mb-2 tracking-[0.4em] uppercase font-bold">Terminal Idle</h2>
+              <p className="text-[9px] font-bold text-slate-600 uppercase tracking-[0.3em]">Awaiting Uplink from Knowledge Matrix</p>
             </div>
           </div>
         )}
 
-        <div className="h-10 px-4 md:px-6 glass border-t border-white/5 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-4">
-             <div className="flex items-center gap-1.5 text-[10px] text-slate-500 whitespace-nowrap">
-               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" /> Uplink Active
+        <div className="h-12 px-6 glass border-t border-white/5 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-6">
+             <div className="flex items-center gap-2 text-[9px] text-slate-500 whitespace-nowrap uppercase font-bold tracking-widest">
+               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]" /> Server: ONLINE
              </div>
              {isSyncing && (
-                <div className="flex items-center gap-1.5 text-[10px] text-violet-400 animate-pulse">
-                  <RefreshCw size={10} className="animate-spin" /> Syncing...
+                <div className="flex items-center gap-2 text-[9px] text-violet-400 animate-pulse uppercase font-bold tracking-widest">
+                  <RefreshCw size={10} className="animate-spin" /> Persisting global state...
                 </div>
              )}
           </div>
-          <div className="text-[10px] text-slate-500 font-medium tracking-wider uppercase">OS V1.4.5 • Global Sync: ON</div>
+          <div className="text-[9px] text-slate-600 font-bold tracking-[0.2em] uppercase">BlizDrive v1.4.7 • Firebase Global Cloud</div>
         </div>
       </main>
     </div>
